@@ -1,4 +1,4 @@
-FROM node:20 AS build
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
@@ -6,7 +6,7 @@ COPY /SyncraMed.zip .
 
 RUN unzip SyncraMed.zip
 
-RUN npm i
+RUN npm i --force
 
 RUN npm run build
 
