@@ -1,11 +1,19 @@
+# SyncraMed
 
-  # SyncraMed
+A class project intended to simulate the creation and upkeep of an AI Startup that is focused on helping patients track and learn about their medications. Collaborators: Lorenna Solis Rivera (CEO), Roy Batuman (COO), Daniel Waterman (CMO), and Vanessa Gutierrez (CTO).
 
-  This is a code bundle for SyncraMed. The original project is available at https://www.figma.com/design/N3erNTpwShJY8O4kqq8yo2/SyncraMed.
 
-  ## Running the code
 
-  Run `npm i` to install the dependencies.
+## Key Features
 
-  Run `npm run dev` to start the development server.
-  
+- Allows users to create an account and/or login
+- Allows users to take photos of medication bottles to automatically input medications and also allows them to enter medications manually
+- Uses AI to give patients more information about the medications they are taking
+- Allows users to set up daily reminders to take their medications
+- Gives users a home page with all of their medications listed
+
+## Test Our App!
+Download the SyncraMed package v0.0.1 under the "Releases" section and use Vite to set the app up on localhost with the associated port number.
+
+
+
