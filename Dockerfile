@@ -2,7 +2,7 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-COPY main/SyncraMed.zip .
+COPY SyncraMed/SyncraMed.zip .
 
 RUN unzip SyncraMed.zip
 
