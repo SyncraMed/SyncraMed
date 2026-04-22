@@ -16,4 +16,8 @@ A class project intended to simulate the creation and upkeep of an AI Startup th
 Download the SyncraMed package v0.0.1 under the "Releases" section and use Vite to set the app up on localhost with the associated port number.
 
 
+### Best Architecture for Senior Project
+<img width="619" height="382" alt="Screenshot 2026-04-21 234031" src="https://github.com/user-attachments/assets/3704a581-18fa-4c10-91d7-9c09c9f87869" />
 
+
+        
