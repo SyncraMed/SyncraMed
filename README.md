@@ -17,7 +17,7 @@ Download the SyncraMed package v0.0.1 under the "Releases" section and use Vite 
 
 
 ### Best Architecture for Senior Project
-<img width="619" height="382" alt="Screenshot 2026-04-21 234031" src="https://github.com/user-attachments/assets/3704a581-18fa-4c10-91d7-9c09c9f87869" />
+<img width="453" height="248" alt="Screenshot 2026-05-11 172432" src="https://github.com/user-attachments/assets/3de406b7-3a95-4ca7-a349-f90f95e2925f" />
 
 
         
