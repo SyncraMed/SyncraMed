@@ -38,7 +38,7 @@ export default function Today() {
         <div className="empty"><p><strong>No medications yet</strong></p><p>Add your first medicine or supplement to get reminders and trusted information.</p><div className="row" style={{ justifyContent: "center" }}><Link className="btn" to="/meds/scan">Scan a bottle</Link><Link className="btn ghost" to="/meds/new">Type it in</Link></div></div>
       ) : (
         <>
-          <div className="card row">
+          <div className="card hero row">
             <div className="ring" style={{ ["--p" as any]: pct }}><div>{pct}%</div></div>
             <div><h3>Today</h3><p className="muted small" style={{ margin: 0 }}>{list.length ? `${done} of ${list.length} doses taken` : "Nothing scheduled today"}</p></div>
           </div>

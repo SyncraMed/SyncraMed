@@ -59,7 +59,7 @@ export function Layout() {
   const loc = useLocation();
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
   const tab = (to: string, label: string, Icon: any, end = false) => (
-    <NavLink to={to} end={end}><Icon />{label}</NavLink>
+    <NavLink to={to} end={end}><span className="ico"><Icon /></span>{label}</NavLink>
   );
   return (
     <>
@@ -67,7 +67,7 @@ export function Layout() {
         <Wordmark />
         <Link to="/more" className="btn ghost small" aria-label="More: settings, sources, privacy"><IconMenu width={18} height={18} /> More</Link>
       </header>
-      <main><Outlet /></main>
+      <main><div className="page" key={loc.pathname}><Outlet /></div></main>
       <div className="tabbar"><nav aria-label="Primary">
         {tab("/", "Today", IconToday, true)}{tab("/meds", "Meds", IconPill)}{tab("/calendar", "Calendar", IconCal)}{tab("/journal", "Journal", IconNote)}{tab("/insights", "Insights", IconInsight)}
       </nav></div>
