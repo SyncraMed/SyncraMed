@@ -36,13 +36,14 @@ export function frameFromVideo(v: HTMLVideoElement, maxSide = 1400): HTMLCanvasE
 }
 
 /** A reader that stays loaded between frames (loading the engine each time would be far too slow for live scanning). */
-export async function createReader(onStatus?: (label: string) => void) {
+export async function createReader(onStatus?: (label: string) => void, opts: { psm?: string; minConf?: number } = {}) {
   const { createWorker } = await import("tesseract.js");
   const worker = await createWorker("eng", 1, {
     workerPath: "/ocr/worker.min.js", corePath: "/ocr/core", langPath: "/ocr/lang", gzip: true,
     logger: (m: { status: string }) => { if (m.status.includes("loading")) onStatus?.("Loading the reader (first time only)"); },
   });
-  return { read: async (c: HTMLCanvasElement) => confidentText((await worker.recognize(c)).data), close: () => worker.terminate() };
+  if (opts.psm) await worker.setParameters({ tessedit_pageseg_mode: opts.psm as any });
+  return { read: async (c: HTMLCanvasElement) => confidentText((await worker.recognize(c)).data, opts.minConf ?? 60), close: () => worker.terminate() };
 }
 
 // Words that belong on a pharmacy label are kept at a lower confidence: they are checked against this vocabulary instead.
@@ -53,7 +54,7 @@ export function confidentText(data: any, minConf = 60): string {
   const lines: any[] | undefined = data?.lines;
   if (!lines?.length) return data?.text ?? "";
   return lines
-    .map((l) => (l.words ?? []).filter((w: any) => /[A-Za-z0-9]/.test(w.text) && (w.confidence >= minConf || (w.confidence >= 30 && LABEL_WORDS.test(w.text.trim())))).map((w: any) => w.text).join(" "))
+    .map((l) => (l.words ?? []).filter((w: any) => /[A-Za-z0-9]/.test(w.text) && (w.confidence >= minConf || (w.confidence >= 25 && (LABEL_WORDS.test(w.text.trim()) || /^\d{1,4}[.,:;]?$/.test(w.text.trim()) || /^[A-Za-z]+['’][A-Za-z]+[.,]?$/.test(w.text.trim()))))).map((w: any) => w.text).join(" "))
     .filter((t: string) => t.trim().length > 1).join("\n");
 }
 

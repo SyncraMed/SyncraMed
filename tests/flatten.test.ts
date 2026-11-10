@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateSkew, flatten, localThreshold, rotate, sharpness, type Gray } from "../src/scan/flatten";
+import { estimateSkew, flatten, localThreshold, normalize, rotate, sharpness, textBounds, type Gray } from "../src/scan/flatten";
 
 // A page of "text lines": dark bars, optionally on a lighting gradient.
 function page(w: number, h: number, shade = false): Gray {
@@ -31,7 +31,19 @@ describe("flatten", () => {
     expect(sharpness(crisp)).toBeGreaterThan(sharpness(blur));
   });
   it("flatten returns a black-and-white page", () => {
-    const { page: p } = flatten(page(500, 300, true), 800);
-    expect([...new Set(p.data)].sort()).toEqual([0, 255]);
+    const f = flatten(page(500, 300, true), 800);
+    expect([...new Set(f.hard.data)].sort()).toEqual([0, 255]);
+    expect(f.soft.w).toBeGreaterThan(300);
+  });
+  it("normalize evens the light but keeps grey levels", () => {
+    const n = normalize(page(500, 300, true), 61); const px = (x: number, y: number) => n.data[y * 500 + x];
+    expect(Math.abs(px(60, 100) - px(450, 100))).toBeLessThan(40); // blank paper equally bright on the dark and bright side
+    expect(px(450, 35)).toBeLessThan(px(450, 100) - 60);           // ink is clearly darker
+  });
+  it("finds the label inside a bigger picture", () => {
+    const big: Gray = { data: new Uint8ClampedArray(1000 * 700).fill(120), w: 1000, h: 700 };
+    const lab = page(500, 300); for (let y = 0; y < 300; y++) for (let x = 0; x < 500; x++) big.data[(y + 200) * 1000 + x + 250] = lab.data[y * 500 + x];
+    const b = textBounds(big);
+    expect(b.w).toBeLessThan(800); expect(b.x).toBeLessThan(260); expect(b.x + b.w).toBeGreaterThan(740);
   });
 });

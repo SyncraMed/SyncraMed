@@ -27,7 +27,7 @@ const FORMS = "tablets?|tabs?|capsules?|caps?|softgels?|caplets?|chewables?|loze
 const UNIT = "mg|mcg|µg|ug|g|ml|iu|units?|meq|%";
 const WORD_NUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, half: 0.5, "1/2": 0.5, "½": 0.5 };
 
-const title = (s: string) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\bDr\b\.?/g, "Dr.");
+const title = (s: string) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\bDr\b\.?/g, "Dr.").replace(/\b([OD])'([a-z])/gi, (_m, a: string, b: string) => `${a.toUpperCase()}'${b.toUpperCase()}`);
 const clean = (s: string) => s.replace(/[|_~`“”]/g, " ").replace(/\s+/g, " ").trim();
 
 function parseDate(s: string): string | undefined {
@@ -97,6 +97,9 @@ export function focusLines(all: string[]): string[] {
 export function fixDigits(raw: string): string {
   const num = (t: string) => t.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1");
   return raw
+    .replace(/\b(take|use|chew|apply|inject)(\d)/gi, "$1 $2")             // "TAKE1 TABLET": the space was lost
+    .replace(/\b0'(?=[A-Za-z])/g, "O'")                                       // "0'BRIEN"
+    .replace(/\b[0O]TY\s?[:;.]/g, "QTY:")                                  // "0TY:30": Q read as 0 or O
     .replace(/\b([0-9OoIl|]{1,5})(\.[0-9OoIl]{1,2})?\s?(mg|mcg|ml|g|iu|units?)\b/gi, (m, a: string, b: string | undefined, u: string) => (/\d/.test(a) ? `${num(a)}${b ? num(b) : ""} ${u}` : m))
     .replace(/\b(qty|quantity|refills?)(\s*[:#.]?\s*)([0-9OoIl|]{1,4})\b/gi, (m, k: string, sep: string, t: string) => (/\d/.test(t) || (/^refill/i.test(k) && /^[Oo]$/.test(t)) ? `${k}${sep}${num(t)}` : m));
 }
@@ -157,7 +160,9 @@ export function parseLabel(raw0: string): ScanResult {
   r.nameCandidates = [...new Set(r.nameCandidates.map((n) => n.replace(/\s+(tablet|capsule|tab|cap)s?$/i, "").trim()).filter((n) => n.length > 2))].slice(0, 4).map((n) => (n === n.toUpperCase() ? title(n) : n));
 
   // directions
-  const dirIdx = lines.findIndex((l) => /^(take|use|apply|inject|inhale|insert|chew|dissolve|place|instill|spray)\b/i.test(l));
+  const dirIdx = lines.findIndex((l) => /^(take|use|apply|inject|inhale|insert|chew|dissolve|place|instill|spray)\b/i.test(l)) >= 0
+    ? lines.findIndex((l) => /^(take|use|apply|inject|inhale|insert|chew|dissolve|place|instill|spray)\b/i.test(l))
+    : lines.findIndex((l) => /\bby mouth\b|\b(?:once|twice)\s+(?:a\s+|per\s+)?(?:day|daily)\b|\bat bedtime\b|\bevery (?:morning|evening|day|night|\d+\s*hours?)\b|\bas needed\b/i.test(l) && !/\b(qty|refills?|discard|rx)\b/i.test(l));
   if (dirIdx >= 0) {
     let d = lines[dirIdx];
     let end = dirIdx;
@@ -170,19 +175,24 @@ export function parseLabel(raw0: string): ScanResult {
   }
 
   // quantity / refills / dates
-  const q = flat.match(/\b(?:qty|quantity|dispensed)\s*[:#.]?\s*(\d{1,4})\b/i); if (q) r.quantity = Number(q[1]);
-  const rf = flat.match(/\brefills?(?:\s*(?:remaining|left))?\s*[:#.]?\s*(\d{1,2})\b/i); if (rf) r.refills = Number(rf[1]);
+  const q = flat.match(/\b(?:qty|q[tyr][yvt]|oty|aty|quantity|dispensed|disp)\s*[:#.;]?\s*(\d{1,4})\b/i) ?? flat.match(/\b(\d{1,4})\s+(?:tablets?|capsules?|caps|tabs)\s+(?:dispensed|total)\b/i) ?? flat.match(/\b(\d{2,4})\s+refills?\b/i);
+  if (q && !(/refill/i.test(q[0]) && Number(q[1]) < 12)) r.quantity = Number(q[1]); // "30 REFILLS:" is the quantity whose "QTY" label was missed; "3 refills" is not
+  const rf = flat.match(/\brefills?(?:\s*(?:remaining|left))?\s*[:#.]?\s*(\d{1,2})\b/i) ?? flat.match(/\b(?:remaining|left)\s*[:#.]\s*(\d{1,2})\b/i); if (rf) r.refills = Number(rf[1]);
   else if (/\bno refills\b|\brefills?\s*[:]?\s*none\b/i.test(flat)) r.refills = 0;
   const ex = flat.match(/\b(?:discard after|discard by|use by|exp(?:ires?|iration)?(?: date)?|expiry)\s*[:.]?\s*([A-Za-z0-9\/\-., ]{4,20})/i);
   if (ex) r.expires = parseDate(ex[1]);
   const fl = flat.match(/\b(?:date filled|filled|fill date|dispensed)\s*[:.]?\s*([0-9\/\-.]{6,10})/i); if (fl) r.filled = parseDate(fl[1]);
 
   // prescriber (Dr. Maria Lopez). The patient name is deliberately not read.
-  for (const l of allLines) {
-    const m = l.match(/\b(?:dr\.?|doctor|prescriber|prescribed by|physician)\s*[:.]?\s*([A-Za-z][A-Za-z'.\-]+(?:,?\s+[A-Za-z][A-Za-z'.\-]+){0,2})/i);
-    if (!m) continue;
-    const name = m[1].replace(/\b(Qty|Refills?|Filled|Rx|Date|Discard|Take|Phone|Ph)\b.*$/i, "").replace(/[,.]$/, "").trim();
-    if (name.length > 2) { r.prescriber = /^(dr|doctor)/i.test(m[0]) ? `Dr. ${title(name)}` : title(name); break; }
+  const NOT_A_NAME = /^(license|licence|lic|dea|npi|number|no|phone|ph|rx|qty|refills?|filled|date|discard|take|use|pharmacy|store|office|address|name|id)$/i;
+  prescriber: for (const l of allLines) {
+    const re = /\b(?:dr\.?|doctor|prescriber|prescribed\s+by|physician|md|provider)\s*[:.,]?\s*([A-Za-z][A-Za-z'.\-]+(?:,?\s+[A-Za-z][A-Za-z'.\-]+){0,2})/gi;
+    for (const m of l.matchAll(re)) {
+      const words = m[1].split(/[\s,]+/).filter(Boolean); const keep: string[] = [];
+      for (const w of words) { if (NOT_A_NAME.test(w.replace(/[.:]/g, ""))) break; keep.push(w); }
+      const name = keep.join(" ").replace(/[,.]$/, "").trim();
+      if (name.length > 2) { r.prescriber = /^(dr|doctor)/i.test(m[0]) ? `Dr. ${title(name)}` : title(name); break prescriber; }
+    }
   }
 
   // pharmacy
