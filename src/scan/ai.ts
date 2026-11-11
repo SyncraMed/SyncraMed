@@ -9,7 +9,7 @@ export function aiEnabled(): Promise<boolean> {
   return enabled;
 }
 
-interface Fields { medicine?: string; strength?: string; form?: string; directions?: string; quantity?: number | null; refills?: number | null; prescriber?: string; pharmacy?: string; filled?: string; expires?: string }
+export interface Fields { medicine?: string; strength?: string; form?: string; directions?: string; quantity?: number | null; refills?: number | null; prescriber?: string; pharmacy?: string; filled?: string; expires?: string }
 const us = (d?: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d ?? ""); return m ? `${m[2]}/${m[3]}/${m[1]}` : undefined; };
 
 export function fieldsToText(f: Fields): string {
@@ -25,16 +25,20 @@ export function fieldsToText(f: Fields): string {
   return L.join("\n");
 }
 
-export async function aiReadText(canvas: HTMLCanvasElement): Promise<{ text: string; fields: number } | null> {
+export interface AiRead { text: string; fields: number; data: Fields }
+export let aiLastError = "";
+export async function aiReadText(canvas: HTMLCanvasElement): Promise<AiRead | null> {
+  aiLastError = "";
   try {
     if (!(await aiEnabled())) return null;
     const k = Math.min(1, 2000 / Math.max(canvas.width, canvas.height));
     const c = document.createElement("canvas"); c.width = Math.round(canvas.width * k); c.height = Math.round(canvas.height * k);
     c.getContext("2d")!.drawImage(canvas, 0, 0, c.width, c.height);
     const r = await fetch(apiUrl("/api/scan-ai"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.9) }), signal: AbortSignal.timeout(30000) });
-    if (!r.ok) return null;
-    const text = fieldsToText(((await r.json()) as { fields?: Fields }).fields ?? {});
+    if (!r.ok) { aiLastError = `AI reader error ${r.status}`; return null; }
+    const data = ((await r.json()) as { fields?: Fields }).fields ?? {};
+    const text = fieldsToText(data);
     const n = text.split("\n").filter((l) => l.trim()).length;
-    return n >= 1 ? { text, fields: n } : null;
-  } catch { return null; }
+    if (n < 1) aiLastError = "AI reader returned nothing"; return n >= 1 ? { text, fields: n, data } : null;
+  } catch { aiLastError = "AI reader unreachable"; return null; }
 }

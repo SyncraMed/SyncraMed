@@ -47,8 +47,15 @@ export default function Scan() {
   const readPicture = async (g: Shot, code: string | null, wide = false) => {
     try {
       setBusy({ pct: 3, label: "Flattening the label" });
-      const { texts, flatUrl } = await readLabelImage(g, (pct, label) => setBusy({ pct, label }), wide);
-      const r = mergeReads(texts); const text = texts.join("\n\n— second reading —\n");
+      const { texts, flatUrl, aiData, ai: aiOnly, note } = await readLabelImage(g, (pct, label) => setBusy({ pct, label }), wide);
+      const r = mergeReads(texts); let text = texts.join("\n\n— second reading —\n");
+      if (aiData) { // what the AI read from the label is used as-is, not re-parsed
+        if (aiData.strength) r.strength = aiData.strength; if (aiData.form) r.form = aiData.form;
+        if (aiData.directions) r.directions = aiData.directions; if (aiData.quantity != null) r.quantity = aiData.quantity;
+        if (aiData.refills != null) r.refills = aiData.refills; if (aiData.prescriber) r.prescriber = /^dr\b/i.test(aiData.prescriber) ? aiData.prescriber : `Dr. ${aiData.prescriber}`;
+        if (aiData.medicine) r.nameCandidates = [aiData.medicine, ...r.nameCandidates.filter((n) => n.toLowerCase() !== aiData.medicine!.toLowerCase())];
+      }
+      text = `Reader: ${aiOnly ? "AI reader" : note ?? "on-device"}\n` + (aiData ? `AI said: ${JSON.stringify(aiData)}\n\n` : "\n") + text;
       let fromCode: string | undefined;
       if (code) fromCode = (await api<{ match: { name: string } | null }>(`/api/ndc?code=${code}`))?.match?.name;
       if (!r.nameCandidates.length && !fromCode) { setBusy(null); setRaw(text); setPreview(flatUrl); setRes(r); setPick(""); return; }

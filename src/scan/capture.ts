@@ -2,7 +2,7 @@
 // too slow on phones.) Nothing here is uploaded: the picture is processed on the device.
 import { flatten, pad, resize, sharpness, toGray, type Flat, type Gray } from "./flatten";
 import { createReader, type Progress } from "./ocr";
-import { aiReadText } from "./ai";
+import { aiReadText, aiLastError, aiEnabled, type Fields } from "./ai";
 import { alignFrames, composeFrames, type Rgba } from "./stitch";
 
 /** The part of the picture that is read, as fractions. The box drawn on screen is only an aiming guide (6% / 12% in);
@@ -115,7 +115,7 @@ export async function stitchSweep(frames: SweepFrame[], onProgress?: Progress): 
   return { shot: { gray: toGray(image.data, image.w, image.h), color: c }, used: placed.length };
 }
 
-export interface LabelRead { texts: string[]; flatUrl: string; skew: number; ai?: boolean }
+export interface LabelRead { texts: string[]; flatUrl: string; skew: number; ai?: boolean; aiData?: Fields; note?: string }
 
 /** Flatten, then read it two ways (soft grey and hard black-and-white). The caller combines the readings. */
 export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = false): Promise<LabelRead> {
@@ -128,7 +128,7 @@ export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = f
   // crop that clipped the label would hide fields from it.
   onProgress?.(10, "Reading the label");
   const ai = await aiReadText(shot.color);              // only when the server has an AI key; otherwise null
-  if (ai && ai.fields >= 4) { onProgress?.(100, "Done"); return { texts: [ai.text], flatUrl, skew: f.skew, ai: true }; }
+  if (ai && ai.fields >= 4) { onProgress?.(100, "Done"); return { texts: [ai.text], flatUrl, skew: f.skew, ai: true, aiData: ai.data }; }
   onProgress?.(15, "Loading the reader (first time only)");
   const reader = await createReader(undefined, { minConf: 45 });
   try {
@@ -140,7 +140,8 @@ export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = f
     // the reader is size-sensitive: smaller copies find words the big one misses
     for (const k of [0.65]) texts.push(await reader.read(grayToCanvas(pad(resize(f.soft, Math.round(f.soft.w * k), Math.round(f.soft.h * k))))));
     onProgress?.(100, "Done");
-    if (ai) texts.unshift(ai.text);                       // the AI found only part of it: combine with the on-device reading
-    return { texts, flatUrl, skew: f.skew };
+    if (ai) texts.unshift(ai.text);
+    const aiNote = ai ? "AI reader (partial) + on-device" : (await aiEnabled()) ? `on-device only (${aiLastError || "AI not used"})` : "on-device";                       // the AI found only part of it: combine with the on-device reading
+    return { texts, flatUrl, skew: f.skew, aiData: ai?.data, note: aiNote };
   } finally { await reader.close(); }
 }
