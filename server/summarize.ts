@@ -1,3 +1,4 @@
+import { geminiJson } from "./labelai.js";
 import type { Block, SectionKey, SourcePassage } from "../shared/education.js";
 
 export type Summarizer = (passages: SourcePassage[], wanted: SectionKey[]) => Promise<{ key: SectionKey; blocks: Block[] }[]>;
@@ -31,6 +32,18 @@ export function anthropicSummarizer(apiKey: string, model: string): Summarizer {
     if (!r.ok) throw new Error(`model request failed: ${r.status}`);
     const j: any = await r.json();
     const text: string = j?.content?.find((c: any) => c.type === "text")?.text ?? "";
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("model returned no JSON");
+    return JSON.parse(m[0]).sections ?? [];
+  };
+}
+
+/** Same job and same rules as above, done by Gemini. The reply is still checked by the caller against the passages. */
+export function geminiSummarizer(apiKey: string, model: string): Summarizer {
+  return async (passages, wanted) => {
+    const user = `Sections wanted (keys): ${wanted.join(", ")}\n\nPASSAGES:\n` +
+      passages.map((p) => `[${p.id}] (${p.org}; ${p.section ?? p.title}) ${p.text.slice(0, 3500)}`).join("\n\n");
+    const text = await geminiJson(apiKey, model, SYSTEM, user);
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) throw new Error("model returned no JSON");
     return JSON.parse(m[0]).sections ?? [];
