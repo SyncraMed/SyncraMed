@@ -124,9 +124,11 @@ export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = f
   const f = flatten(shot.gray, wide ? Math.min(4200, Math.max(shot.gray.w, shot.gray.h)) : 1800); // a joined picture is kept at full size so the small print stays readable
   const colour = colourPage(shot.color, f);
   const flatUrl = colour.toDataURL("image/jpeg", 0.8);
+  // The AI gets the whole colour picture (not the cropped, straightened copy): it reads curved and tilted labels well, and a
+  // crop that clipped the label would hide fields from it.
   onProgress?.(10, "Reading the label");
-  const ai = await aiReadText(colour);                 // only when the server has an AI key; otherwise null
-  if (ai) { onProgress?.(100, "Done"); return { texts: [ai], flatUrl, skew: f.skew, ai: true }; }
+  const ai = await aiReadText(shot.color);              // only when the server has an AI key; otherwise null
+  if (ai && ai.fields >= 4) { onProgress?.(100, "Done"); return { texts: [ai.text], flatUrl, skew: f.skew, ai: true }; }
   onProgress?.(15, "Loading the reader (first time only)");
   const reader = await createReader(undefined, { minConf: 45 });
   try {
@@ -138,6 +140,7 @@ export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = f
     // the reader is size-sensitive: smaller copies find words the big one misses
     for (const k of [0.65]) texts.push(await reader.read(grayToCanvas(pad(resize(f.soft, Math.round(f.soft.w * k), Math.round(f.soft.h * k))))));
     onProgress?.(100, "Done");
+    if (ai) texts.unshift(ai.text);                       // the AI found only part of it: combine with the on-device reading
     return { texts, flatUrl, skew: f.skew };
   } finally { await reader.close(); }
 }

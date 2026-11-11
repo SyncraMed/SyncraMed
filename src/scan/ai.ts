@@ -25,15 +25,16 @@ export function fieldsToText(f: Fields): string {
   return L.join("\n");
 }
 
-export async function aiReadText(canvas: HTMLCanvasElement): Promise<string | null> {
+export async function aiReadText(canvas: HTMLCanvasElement): Promise<{ text: string; fields: number } | null> {
   try {
     if (!(await aiEnabled())) return null;
-    const k = Math.min(1, 1600 / Math.max(canvas.width, canvas.height));
+    const k = Math.min(1, 2000 / Math.max(canvas.width, canvas.height));
     const c = document.createElement("canvas"); c.width = Math.round(canvas.width * k); c.height = Math.round(canvas.height * k);
     c.getContext("2d")!.drawImage(canvas, 0, 0, c.width, c.height);
-    const r = await fetch(apiUrl("/api/scan-ai"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.85) }), signal: AbortSignal.timeout(30000) });
+    const r = await fetch(apiUrl("/api/scan-ai"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.9) }), signal: AbortSignal.timeout(30000) });
     if (!r.ok) return null;
     const text = fieldsToText(((await r.json()) as { fields?: Fields }).fields ?? {});
-    return text.split("\n").length >= 2 ? text : null;
+    const n = text.split("\n").filter((l) => l.trim()).length;
+    return n >= 1 ? { text, fields: n } : null;
   } catch { return null; }
 }
