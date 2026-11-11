@@ -265,3 +265,17 @@ label.scanfield.missing input { border: 2px dashed var(--fg); background: var(--
 .sheetfoot { margin-top: auto; padding-top: 8px; position: sticky; bottom: 0; background: var(--bg); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
 .flatimg { max-height: 16vh; }
 .sheet .grid2 { gap: 10px; }
+
+/* Wrap-around scan controls */
+.modalfoot.two { justify-content: space-between; align-items: center; padding: 6px 16px 18px; gap: 8px; }
+.modalfoot .wrap { flex: 1; min-width: 0; font-size: 0.9rem; }
+.modalfoot .btn.ghost.wrap { background: transparent; color: #fff; border-color: #666; padding: 10px 8px; line-height: 1.15; }
+.modalfoot span.wrap { visibility: hidden; }
+.modalfoot span.sweepcount { visibility: visible; color: #ddd; text-align: left; }
+.modalfoot .btn.wrap:not(.ghost) { background: #fff; color: #000; }
+.shutter.stop { border-color: #ff4d4d; }
+.shutter.stop span { background: #ff4d4d; border-radius: 12px; transform: scale(.55); }
+.sweepbar { height: 4px; margin: 0 16px 6px; border-radius: 2px; background: #333; }
+.sweepbar i { display: block; height: 4px; border-radius: 2px; background: #fff; transition: width .25s; }
+.flatwrap { overflow-x: auto; border-radius: 14px; margin: 0 0 10px; border: 1px solid var(--line); background: #fff; -webkit-overflow-scrolling: touch; }
+.flatwrap .flatimg { border: 0; margin: 0; border-radius: 0; display: block; }

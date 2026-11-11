@@ -53,9 +53,21 @@ const LABEL_WORDS = /^(qty|quantity|refills?|remaining|left|take|use|apply|injec
 export function confidentText(data: any, minConf = 60): string {
   const lines: any[] | undefined = data?.lines;
   if (!lines?.length) return data?.text ?? "";
-  return lines
-    .map((l) => (l.words ?? []).filter((w: any) => /[A-Za-z0-9]/.test(w.text) && (w.confidence >= minConf || (w.confidence >= 25 && (LABEL_WORDS.test(w.text.trim()) || /^\d{1,4}[.,:;]?$/.test(w.text.trim()) || /^[A-Za-z]+['’][A-Za-z]+[.,]?$/.test(w.text.trim()))))).map((w: any) => w.text).join(" "))
-    .filter((t: string) => t.trim().length > 1).join("\n");
+  const keep = (w: any) => /[A-Za-z0-9]/.test(w.text) && (w.confidence >= minConf || (w.confidence >= 25 && (LABEL_WORDS.test(w.text.trim()) || /^\d{1,4}[.,:;]?$/.test(w.text.trim()) || /^[A-Za-z]+['’][A-Za-z]+[.,]?$/.test(w.text.trim()))));
+  const out: string[] = [];
+  for (const l of lines) {
+    // A wide label puts several items side by side on one row (name, directions, quantity). A big gap between words starts a new line,
+    // so each item is read as its own line, as it would be on a narrow label.
+    let cur: string[] = [], prevEnd: number | null = null;
+    for (const w of l.words ?? []) {
+      const b = w.bbox; const h = b ? Math.max(1, b.y1 - b.y0) : 0;
+      if (b && prevEnd !== null && cur.length && b.x0 - prevEnd > 1.6 * h) { out.push(cur.join(" ")); cur = []; }
+      if (b) prevEnd = b.x1;
+      if (keep(w)) cur.push(w.text);
+    }
+    if (cur.length) out.push(cur.join(" "));
+  }
+  return out.filter((t) => t.trim().length > 1).join("\n");
 }
 
 export async function readText(file: Blob, onProgress?: Progress): Promise<string> {

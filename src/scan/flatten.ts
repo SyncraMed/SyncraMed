@@ -124,9 +124,10 @@ export interface Box { x: number; y: number; w: number; h: number }
  *  Bottle plastic, the cap and the background are left out so the text gets more of the pixels. */
 export function textBounds(g: Gray, pad = 0.04): Box {
   const full: Box = { x: 0, y: 0, w: g.w, h: g.h };
-  const k = Math.min(1, 600 / g.w); const s = k < 1 ? resize(g, Math.round(g.w * k), Math.round(g.h * k)) : g;
+  const A = g.w > 1800 ? 1400 : 600; // a long joined label is looked at in more detail, or its small print vanishes
+  const k = Math.min(1, A / g.w); const s = k < 1 ? resize(g, Math.round(g.w * k), Math.round(g.h * k)) : g;
   const bin = localThreshold(s, Math.max(11, Math.round(s.w / 20) | 1), 0.16);
-  const C = 12, cols = Math.floor(s.w / C), rows = Math.floor(s.h / C); if (cols < 4 || rows < 4) return full;
+  const C = A > 600 ? 28 : 12, cols = Math.floor(s.w / C), rows = Math.floor(s.h / C); if (cols < 4 || rows < 4) return full;
   const texty = new Uint8Array(cols * rows);
   for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
     let dark = 0; for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) if (bin.data[(cy * C + y) * s.w + cx * C + x] === 0) dark++;
@@ -193,7 +194,7 @@ export function flatten(g: Gray, target = 1800, readWidth = 2000): Flat {
   const part = region ? cropBox(sized, region) : sized;
   const skew = estimateSkew(part);
   const straight = rotate(part, skew);
-  const box = textBounds(straight);
+  const box = straight.w > 1900 ? { x: 0, y: 0, w: straight.w, h: straight.h } : textBounds(straight); // a joined long label is already cut to the label: trimming could only lose small print
   let label = cropBox(straight, box);
   const up = Math.min(2.5, Math.max(1, readWidth / label.w)); // small labels are enlarged so letters are tall enough to read
   if (up > 1.05) label = resize(label, Math.round(label.w * up), Math.round(label.h * up));

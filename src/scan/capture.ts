@@ -2,6 +2,7 @@
 // too slow on phones.) Nothing here is uploaded: the picture is processed on the device.
 import { flatten, pad, resize, sharpness, toGray, type Flat, type Gray } from "./flatten";
 import { createReader, type Progress } from "./ocr";
+import { alignFrames, composeFrames, type Rgba } from "./stitch";
 
 /** The part of the picture that is read, as fractions. The box drawn on screen is only an aiming guide (6% / 12% in);
  *  we read a little beyond it so a label that is not perfectly centred does not lose its first or last line. */
@@ -60,13 +61,66 @@ function colourPage(color: HTMLCanvasElement, f: Flat): HTMLCanvasElement {
   return o;
 }
 
+// ---- Wrap-around scan: record pictures while the bottle is turned, then join them into one long picture.
+export interface SweepFrame { gray: Gray; blob: Blob }
+const SWEEP_GRAY_W = 640;     // pictures are matched at this width (cheap) ...
+const SWEEP_FULL = 1280;      // ... and joined at this size (sharp enough to read)
+const MAX_FRAMES = 60;
+
+export class SweepRecorder {
+  frames: SweepFrame[] = [];
+  private timer: ReturnType<typeof setInterval> | null = null; private busy = false; private prev: Gray | null = null;
+  constructor(private video: HTMLVideoElement, private onCount: (n: number) => void, private onFull?: () => void) {}
+  start() { this.timer = setInterval(() => void this.tick(), 240); void this.tick(); }
+  private async tick() {
+    if (this.busy || !this.video.videoWidth || this.frames.length >= MAX_FRAMES) return;
+    this.busy = true;
+    try {
+      const v = this.video, sw = v.videoWidth, sh = v.videoHeight, bx = GUIDE;
+      const cw = sw * (bx.x1 - bx.x0), ch = sh * (bx.y1 - bx.y0), k = Math.min(1, SWEEP_FULL / Math.max(cw, ch));
+      const big = document.createElement("canvas"); big.width = Math.round(cw * k); big.height = Math.round(ch * k);
+      big.getContext("2d")!.drawImage(v, sw * bx.x0, sh * bx.y0, cw, ch, 0, 0, big.width, big.height);
+      const gk = SWEEP_GRAY_W / big.width; const sm = document.createElement("canvas"); sm.width = SWEEP_GRAY_W; sm.height = Math.round(big.height * gk);
+      const sg = sm.getContext("2d", { willReadFrequently: true })!; sg.drawImage(big, 0, 0, sm.width, sm.height);
+      const id = sg.getImageData(0, 0, sm.width, sm.height); const gray = toGray(id.data, sm.width, sm.height);
+      const th = resize(gray, 32, 24);
+      if (this.prev) { let d = 0; for (let i = 0; i < th.data.length; i++) d += Math.abs(th.data[i] - this.prev.data[i]); if (d / th.data.length < 2.5) return; } // nothing moved yet
+      this.prev = th;
+      const blob: Blob = await new Promise((res, rej) => big.toBlob((b) => (b ? res(b) : rej(new Error("blob"))), "image/jpeg", 0.88));
+      this.frames.push({ gray, blob }); this.onCount(this.frames.length);
+      if (this.frames.length >= MAX_FRAMES) this.onFull?.();
+    } finally { this.busy = false; }
+  }
+  stop(): SweepFrame[] { if (this.timer) clearInterval(this.timer); this.timer = null; return this.frames; }
+}
+
+async function rgbaOf(blob: Blob): Promise<Rgba> {
+  const bmp = await createImageBitmap(blob);
+  try { const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height; const g = c.getContext("2d", { willReadFrequently: true })!; g.drawImage(bmp, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); return { data: d.data, w: c.width, h: c.height }; }
+  finally { bmp.close?.(); }
+}
+
+/** Join the recorded pictures into one long picture. With too few usable pictures, the sharpest single one is used. */
+export async function stitchSweep(frames: SweepFrame[], onProgress?: Progress): Promise<{ shot: Shot; used: number }> {
+  if (!frames.length) throw new Error("no frames");
+  onProgress?.(3, "Lining up the pictures");
+  let placed = await alignFrames(frames.map((f) => f.gray), { onProgress: (d, t) => onProgress?.(3 + (d / Math.max(1, t)) * 12, `Lining up the pictures (${d} of ${t})`) });
+  if (placed.length < 2) { let bi = 0, bs = -1; frames.forEach((f, i) => { const sc = sharpness(f.gray); if (sc > bs) { bs = sc; bi = i; } }); placed = [{ index: bi, x: 0, y: 0, gain: 1 }]; }
+  onProgress?.(16, "Joining them into one picture");
+  const first = await rgbaOf(frames[placed[0].index].blob); const scale = first.w / frames[placed[0].index].gray.w;
+  const image = await composeFrames(async (i) => (i === placed[0].index ? first : rgbaOf(frames[i].blob)), placed, scale);
+  const c = document.createElement("canvas"); c.width = image.w; c.height = image.h;
+  c.getContext("2d")!.putImageData(new ImageData(image.data as Uint8ClampedArray<ArrayBuffer>, image.w, image.h), 0, 0);
+  return { shot: { gray: toGray(image.data, image.w, image.h), color: c }, used: placed.length };
+}
+
 export interface LabelRead { texts: string[]; flatUrl: string; skew: number }
 
 /** Flatten, then read it two ways (soft grey and hard black-and-white). The caller combines the readings. */
-export async function readLabelImage(shot: Shot, onProgress?: Progress): Promise<LabelRead> {
+export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = false): Promise<LabelRead> {
   onProgress?.(5, "Flattening the label");
   await new Promise((r) => setTimeout(r, 20)); // let the screen update before the heavy work
-  const f = flatten(shot.gray);
+  const f = flatten(shot.gray, wide ? Math.min(4200, Math.max(shot.gray.w, shot.gray.h)) : 1800); // a joined picture is kept at full size so the small print stays readable
   const flatUrl = colourPage(shot.color, f).toDataURL("image/jpeg", 0.8);
   onProgress?.(15, "Loading the reader (first time only)");
   const reader = await createReader(undefined, { minConf: 45 });

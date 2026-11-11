@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiUrl } from "../core/api";
 import { parseDirections, type ScanResult } from "../scan/parse";
-import { grabSharpest, shotFromFile, readLabelImage, type Shot } from "../scan/capture";
+import { grabSharpest, shotFromFile, readLabelImage, stitchSweep, SweepRecorder, type Shot } from "../scan/capture";
 import { mergeReads } from "../scan/merge";
 import { AddModeSwitch, BackLink } from "../components/ui";
 import { barcodeFromImage, barcodeFromVideo } from "../scan/barcode";
@@ -28,7 +28,9 @@ export default function Scan() {
   const [preview, setPreview] = useState("");
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const stopCamera = () => { stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCam(false); setCamReady(false); };
+  const [sweepN, setSweepN] = useState<number | null>(null); // null = not recording; a number = pictures recorded so far
+  const rec = useRef<SweepRecorder | null>(null);
+  const stopCamera = () => { rec.current?.stop(); rec.current = null; setSweepN(null); stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCam(false); setCamReady(false); };
   useEffect(() => () => { stream.current?.getTracks().forEach((t) => t.stop()); }, []);
 
   const finish = async (r: ScanResult, text: string, flatUrl: string, extra?: string) => {
@@ -39,10 +41,10 @@ export default function Scan() {
   };
 
   /** Flatten one still picture and read it once. */
-  const readPicture = async (g: Shot, code: string | null) => {
+  const readPicture = async (g: Shot, code: string | null, wide = false) => {
     try {
       setBusy({ pct: 3, label: "Flattening the label" });
-      const { texts, flatUrl } = await readLabelImage(g, (pct, label) => setBusy({ pct, label }));
+      const { texts, flatUrl } = await readLabelImage(g, (pct, label) => setBusy({ pct, label }), wide);
       const r = mergeReads(texts); const text = texts.join("\n\n— second reading —\n");
       let fromCode: string | undefined;
       if (code) fromCode = (await api<{ match: { name: string } | null }>(`/api/ndc?code=${code}`))?.match?.name;
@@ -70,6 +72,23 @@ export default function Scan() {
       stream.current = s; const v = video.current!; v.srcObject = s; await v.play(); setCamReady(true);
     } catch { stopCamera(); setError("The camera isn't available. Allow camera access in your browser, or use Take a photo."); }
   };
+
+  const startSweep = () => {
+    const v = video.current; if (!v) return;
+    setSweepN(0); const r = new SweepRecorder(v, setSweepN, () => void doneSweep()); rec.current = r; r.start();
+  };
+  const doneSweep = async () => {
+    const r = rec.current; const v = video.current; if (!r) return;
+    const code = v ? await barcodeFromVideo(v).catch(() => null) : null;
+    const frames = r.stop(); rec.current = null; setSweepN(null); stopCamera();
+    if (!frames.length) { setError("We didn't capture anything. Hold the label in the box and turn the bottle slowly, then press Done."); return; }
+    try {
+      setBusy({ pct: 2, label: "Lining up the pictures" });
+      const { shot, used } = await stitchSweep(frames, (pct, label) => setBusy({ pct, label }));
+      setJoined(used); await readPicture(shot, code, used > 1);
+    } catch { setBusy(null); setError("We couldn't join those pictures. Try again more slowly, or use the single picture button."); }
+  };
+  const [joined, setJoined] = useState(0);
 
   const shutter = async () => {
     const v = video.current; if (!v) return;
@@ -124,8 +143,26 @@ export default function Scan() {
               <div className="guide" aria-hidden><i /><i /><i /><i /></div>
             </div>
           </div>
-          <p className="modalhint">{camReady ? "Fit the label inside the box, hold steady, then press the button." : "Starting the camera…"}</p>
-          <div className="modalfoot"><button className="shutter" onClick={shutter} disabled={!camReady} aria-label="Take the picture"><span /></button></div>
+          {sweepN === null ? (
+            <>
+              <p className="modalhint">{camReady ? "Short label: fit it in the box and press the round button. Long label that wraps around the bottle: press “Scan the whole bottle”." : "Starting the camera…"}</p>
+              <div className="modalfoot two">
+                <button className="btn ghost wrap" onClick={startSweep} disabled={!camReady}>Scan the whole bottle</button>
+                <button className="shutter" onClick={shutter} disabled={!camReady} aria-label="Take one picture"><span /></button>
+                <span className="wrap" />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="modalhint" role="status">Start with one end of the label inside the box, then turn the bottle slowly so the whole label passes through. Keep it level and steady. Press Done at the other end.</p>
+              <div className="sweepbar" aria-hidden><i style={{ width: `${Math.min(100, (sweepN / 60) * 100)}%` }} /></div>
+              <div className="modalfoot two">
+                <span className="wrap sweepcount">{sweepN} {sweepN === 1 ? "picture" : "pictures"}</span>
+                <button className="shutter stop" onClick={doneSweep} aria-label="Done"><span /></button>
+                <button className="btn wrap" onClick={doneSweep}>Done</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -142,7 +179,8 @@ export default function Scan() {
         <div className="modal sheet review" role="dialog" aria-modal="true" aria-label="Check the label"><div className="sheetin">
           <div className="row between" style={{ marginBottom: 8 }}><h1 style={{ margin: 0, fontSize: "1.4rem" }}>Check the label</h1>
             <span className={`badge ${missing ? "" : "solid"}`}>{missing ? `${missing} to fill in` : "All found"}</span></div>
-          {preview && <img className="flatimg" src={preview} alt="Your label, straightened" />}
+          {preview && <div className="flatwrap"><img className="flatimg" src={preview} alt="Your label, straightened" style={joined > 1 ? { height: "16vh", width: "auto", maxWidth: "none" } : undefined} /></div>}
+          {joined > 1 && <p className="muted small" style={{ margin: "-4px 0 8px" }}>Joined from {joined} pictures. Swipe the label sideways to look along it.</p>}
 
           {(() => { const opts = uniq([...matches.map((m) => tc(m.name)), ...res.nameCandidates]); return opts.length ? (
             <div className="chips" role="group" aria-label="Medicine name" style={{ marginBottom: 8 }}>
@@ -156,7 +194,7 @@ export default function Scan() {
           {res.schedule && <p className="muted small" style={{ margin: "0 0 8px" }}>Reminders will start as: {res.schedule.kind === "prn" ? "as needed" : res.schedule.kind === "daily" ? `every day at ${res.schedule.times.join(", ")}` : res.schedule.kind === "interval" ? `every ${res.schedule.everyDays} days` : "certain days"}. You can change them next. ✓ = matched to a real medicine in RxNorm. The patient name is never read or kept.</p>}
           {raw && <details style={{ marginBottom: 10 }}><summary className="small">Text we read</summary><pre style={{ whiteSpace: "pre-wrap", fontSize: "0.78rem" }}>{raw}</pre></details>}
 
-          <div className="row sheetfoot"><button className="btn" style={{ flex: 1 }} disabled={!name} onClick={go}>Continue</button><button className="btn ghost" onClick={() => { setRes(null); setPreview(""); setCustom(null); void openCamera(); }}>Scan again</button><button className="btn ghost" onClick={() => { setRes(null); setPreview(""); setCustom(null); }}>Close</button></div>
+          <div className="row sheetfoot"><button className="btn" style={{ flex: 1 }} disabled={!name} onClick={go}>Continue</button><button className="btn ghost" onClick={() => { setRes(null); setPreview(""); setCustom(null); setJoined(0); void openCamera(); }}>Scan again</button><button className="btn ghost" onClick={() => { setRes(null); setPreview(""); setCustom(null); }}>Close</button></div>
         </div></div>
       )}
     </>
