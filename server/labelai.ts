@@ -20,27 +20,40 @@ const SCHEMA = {
 };
 
 let pickedModel: string | null = null;
-/** If the configured model is retired or unknown, ask Google which models this key can use and take the newest "flash" one. */
-async function findModel(key: string): Promise<string | null> {
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key }, signal: AbortSignal.timeout(10000) });
-  if (!r.ok) return null; const j: any = await r.json();
-  const names: string[] = (j.models ?? []).filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m: any) => String(m.name).replace(/^models\//, ""))
-    .filter((n: string) => /^gemini-[\d.]+-flash$/.test(n));
-  names.sort((a, b) => parseFloat(b.split("-")[1]) - parseFloat(a.split("-")[1]));
-  return names[0] ?? null;
+let modelList: string[] | null = null;
+/** Every Flash model this key can use, newest first (plain "flash" before "flash-lite"). Used when the first choice is busy or unknown. */
+async function otherModels(key: string): Promise<string[]> {
+  if (modelList) return modelList;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return [];
+    const j: any = await r.json();
+    const names: string[] = (j.models ?? []).filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m: any) => String(m.name).replace(/^models\//, "")).filter((n: string) => /^gemini-[\d.]+-flash(-lite)?$/.test(n));
+    names.sort((x, y) => parseFloat(y.split("-")[1]) - parseFloat(x.split("-")[1]) || Number(x.endsWith("-lite")) - Number(y.endsWith("-lite")));
+    return (modelList = names);
+  } catch { return []; }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Try the chosen model; if Google says it is busy (503), over quota, unknown or slow, retry once and then try the other Flash models. */
 export async function readLabelWithGemini(base64Jpeg: string, key: string, model: string): Promise<LabelFields> {
-  try { return await call(base64Jpeg, key, pickedModel ?? model); }
-  catch (e: any) {
-    if (!/ 404\b| 400\b/.test(String(e?.message))) throw e;
-    const alt = await findModel(key);
-    if (!alt || alt === (pickedModel ?? model)) throw e;
-    const out = await call(base64Jpeg, key, alt); pickedModel = alt; console.warn(`[scan-ai] model "${model}" failed; using "${alt}"`); return out;
-  }
+  const deadline = Date.now() + 42000; let lastErr: unknown;
+  const tryModel = async (m: string): Promise<LabelFields | null> => {
+    const left = deadline - Date.now(); if (left < 4000) return null;
+    try { const out = await call(base64Jpeg, key, m, Math.min(20000, left)); if (m !== model) pickedModel = m; return out; }
+    catch (e) { lastErr = e; return null; }
+  };
+  const first = pickedModel ?? model;
+  let out = await tryModel(first);
+  if (out) return out;
+  if (/ (401|403)\b/.test(String((lastErr as Error)?.message))) throw lastErr;     // a bad key: other models will not help
+  await sleep(700); out = await tryModel(first);                                      // "high demand" often clears within a second
+  if (out) return out;
+  for (const m of await otherModels(key)) { if (m === first) continue; out = await tryModel(m); if (out) { console.warn(`[scan-ai] using "${m}" instead of "${first}"`); return out; } }
+  throw lastErr ?? new Error("gemini unavailable");
 }
 
-async function call(base64Jpeg: string, key: string, model: string): Promise<LabelFields> {
+async function call(base64Jpeg: string, key: string, model: string, timeoutMs = 20000): Promise<LabelFields> {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -48,7 +61,7 @@ async function call(base64Jpeg: string, key: string, model: string): Promise<Lab
       contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: "image/jpeg", data: base64Jpeg } }] }],
       generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: SCHEMA, ...(/gemini-2\.5-flash(?!-lite)/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) }, // reading a label needs no long "thinking"; it only slows the answer
     }),
-    signal: AbortSignal.timeout(40000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) {
     let msg = ""; try { msg = String(((await r.json()) as any)?.error?.message ?? "").slice(0, 200); } catch { /* ignore */ }
