@@ -2,7 +2,7 @@
 import express from "express";
 import { buildEducation } from "./education.js";
 import { TRUSTED_SOURCES } from "./trusted.js";
-import { anthropicSummarizer } from "./summarize.js";
+import { anthropicSummarizer, geminiSummarizer } from "./summarize.js";
 import { resolveCandidates, lookupCode } from "./scan.js";
 import { readLabelWithGemini } from "./labelai.js";
 import type { EducationBundle } from "../shared/education.js";
@@ -18,9 +18,10 @@ app.use("/api", (req, res, next) => {
 });
 const TTL = 12 * 3600 * 1000; // NLM asks implementers to cache 12-24h
 const memo = new Map<string, { at: number; v: EducationBundle }>();
+// Plain-language rewriting of the trusted-source passages: Anthropic if that key is set, otherwise Gemini if that key is set, otherwise none (cited excerpts only).
 const summarizer = process.env.ANTHROPIC_API_KEY
   ? anthropicSummarizer(process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5")
-  : null;
+  : process.env.GEMINI_API_KEY ? geminiSummarizer(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL ?? "gemini-2.5-flash") : null;
 
 // Privacy: the server only ever receives a medication or supplement NAME. No accounts, no health logs, no logging of queries.
 const geminiKey = process.env.GEMINI_API_KEY;
