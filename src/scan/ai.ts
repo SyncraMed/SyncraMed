@@ -35,7 +35,7 @@ export async function aiReadText(canvas: HTMLCanvasElement): Promise<AiRead | nu
     const c = document.createElement("canvas"); c.width = Math.round(canvas.width * k); c.height = Math.round(canvas.height * k);
     c.getContext("2d")!.drawImage(canvas, 0, 0, c.width, c.height);
     const r = await fetch(apiUrl("/api/scan-ai"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.9) }), signal: AbortSignal.timeout(30000) });
-    if (!r.ok) { aiLastError = `AI reader error ${r.status}`; return null; }
+    if (!r.ok) { let d = ""; try { d = String(((await r.json()) as { detail?: string }).detail ?? ""); } catch { /* ignore */ } aiLastError = `AI reader error ${r.status}${d ? ": " + d : ""}`; return null; }
     const data = ((await r.json()) as { fields?: Fields }).fields ?? {};
     const text = fieldsToText(data);
     const n = text.split("\n").filter((l) => l.trim()).length;

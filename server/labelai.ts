@@ -19,7 +19,28 @@ const SCHEMA = {
   },
 };
 
+let pickedModel: string | null = null;
+/** If the configured model is retired or unknown, ask Google which models this key can use and take the newest "flash" one. */
+async function findModel(key: string): Promise<string | null> {
+  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) return null; const j: any = await r.json();
+  const names: string[] = (j.models ?? []).filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m: any) => String(m.name).replace(/^models\//, ""))
+    .filter((n: string) => /^gemini-[\d.]+-flash$/.test(n));
+  names.sort((a, b) => parseFloat(b.split("-")[1]) - parseFloat(a.split("-")[1]));
+  return names[0] ?? null;
+}
+
 export async function readLabelWithGemini(base64Jpeg: string, key: string, model: string): Promise<LabelFields> {
+  try { return await call(base64Jpeg, key, pickedModel ?? model); }
+  catch (e: any) {
+    if (!/ 404\b| 400\b/.test(String(e?.message))) throw e;
+    const alt = await findModel(key);
+    if (!alt || alt === (pickedModel ?? model)) throw e;
+    const out = await call(base64Jpeg, key, alt); pickedModel = alt; console.warn(`[scan-ai] model "${model}" failed; using "${alt}"`); return out;
+  }
+}
+
+async function call(base64Jpeg: string, key: string, model: string): Promise<LabelFields> {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -29,7 +50,11 @@ export async function readLabelWithGemini(base64Jpeg: string, key: string, model
     }),
     signal: AbortSignal.timeout(25000),
   });
-  if (!r.ok) throw new Error(`gemini ${r.status}`);
+  if (!r.ok) {
+    let msg = ""; try { msg = String(((await r.json()) as any)?.error?.message ?? "").slice(0, 200); } catch { /* ignore */ }
+    console.error(`[scan-ai] Gemini ${r.status} (model ${model}): ${msg}`);   // never logs the picture
+    throw new Error(`gemini ${r.status} ${msg}`);
+  }
   const j: any = await r.json();
   const text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
   return sanitize(JSON.parse(text));

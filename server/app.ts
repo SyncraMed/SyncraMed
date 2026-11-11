@@ -69,7 +69,7 @@ app.post("/api/scan-ai", express.json({ limit: "6mb" }), async (req, res) => {
   const img = String(req.body?.image ?? "").replace(/^data:image\/jpeg;base64,/, "");
   if (img.length < 1000 || !/^[A-Za-z0-9+/=]+$/.test(img)) return res.status(400).json({ error: "No picture." });
   try { res.json({ fields: await readLabelWithGemini(img, geminiKey, process.env.GEMINI_MODEL ?? "gemini-2.5-flash") }); }
-  catch { res.status(502).json({ error: "The AI reader could not be reached." }); }
+  catch (e: any) { res.status(502).json({ error: "The AI reader could not be reached.", detail: String(e?.message ?? "").slice(0, 200) }); }
 });
 
 export default app;
