@@ -31,10 +31,10 @@ export async function aiReadText(canvas: HTMLCanvasElement): Promise<AiRead | nu
   aiLastError = "";
   try {
     if (!(await aiEnabled())) return null;
-    const k = Math.min(1, 2000 / Math.max(canvas.width, canvas.height));
+    const k = Math.min(1, 1500 / Math.max(canvas.width, canvas.height));
     const c = document.createElement("canvas"); c.width = Math.round(canvas.width * k); c.height = Math.round(canvas.height * k);
     c.getContext("2d")!.drawImage(canvas, 0, 0, c.width, c.height);
-    const r = await fetch(apiUrl("/api/scan-ai"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.9) }), signal: AbortSignal.timeout(30000) });
+    const r = await fetch(apiUrl("/api/scan-ai"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.9) }), signal: AbortSignal.timeout(60000) });
     if (!r.ok) { let d = ""; try { d = String(((await r.json()) as { detail?: string }).detail ?? ""); } catch { /* ignore */ } aiLastError = `AI reader error ${r.status}${d ? ": " + d : ""}`; return null; }
     const data = ((await r.json()) as { fields?: Fields }).fields ?? {};
     const text = fieldsToText(data);

@@ -46,9 +46,9 @@ async function call(base64Jpeg: string, key: string, model: string): Promise<Lab
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: "image/jpeg", data: base64Jpeg } }] }],
-      generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: SCHEMA },
+      generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: SCHEMA, ...(/gemini-2\.5-flash(?!-lite)/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) }, // reading a label needs no long "thinking"; it only slows the answer
     }),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(50000),
   });
   if (!r.ok) {
     let msg = ""; try { msg = String(((await r.json()) as any)?.error?.message ?? "").slice(0, 200); } catch { /* ignore */ }
