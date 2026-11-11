@@ -9,7 +9,6 @@ import { MedList, MedForm, MedDetail, MedLearn } from "./pages/Meds";
 import CalendarPage from "./pages/Calendar";
 import Journal from "./pages/Journal";
 import Insights from "./pages/Insights";
-import { Ask } from "./pages/Ask";
 import { More, Pharmacies, Summary, SourcesPage, SourceReader, SettingsPage, PrivacyPage } from "./pages/More";
 
 function Lock({ onOpen }: { onOpen: () => void }) {
@@ -43,7 +42,6 @@ export default function App() {
         <Route path="journal" element={<Journal />} />
         <Route path="insights" element={<Insights />} />
         <Route path="more" element={<More />} />
-        <Route path="ask" element={<Ask />} />
         <Route path="pharmacies" element={<Pharmacies />} />
         <Route path="summary" element={<Summary />} />
         <Route path="sources" element={<SourcesPage />} />

@@ -1,13 +1,10 @@
 import { splitSentences } from "../shared/words.js";
 export { contentWords, splitSentences } from "../shared/words.js";
-const safeCode = (n: number) => { try { return String.fromCodePoint(n); } catch { return " "; } };
 export function decodeEntities(s: string): string {
   return s
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => safeCode(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, n) => safeCode(Number(n)))
-    .replace(/&amp;/g, "&").replace(/\u00a0/g, " ");
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
 }
 export function stripHtml(html: string): string {
   return decodeEntities(

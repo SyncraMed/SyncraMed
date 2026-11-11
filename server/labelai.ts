@@ -28,12 +28,8 @@ export async function otherModels(key: string): Promise<string[]> {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return [];
     const j: any = await r.json();
-    const raw: string[] = (j.models ?? []).filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m: any) => String(m.name).replace(/^models\//, ""));
-    // any text-and-image Flash model: "gemini-3.8-flash", "gemini-3-flash-preview", "gemini-flash-latest", ... (not image/audio/live/embedding variants)
-    const ok = raw.filter((n) => /^gemini-.*flash/.test(n) && !/(image|tts|live|audio|embed|robotics|computer|native|thinking|exp)/.test(n));
-    const ver = (n: string) => parseFloat(/gemini-(\d+(?:\.\d+)?)/.exec(n)?.[1] ?? "0");
-    const rank = (n: string) => (/preview/.test(n) ? 1 : 0) + (/lite/.test(n) ? 2 : 0) + (/latest/.test(n) ? 4 : 0);
-    const names = ok.sort((x, y) => rank(x) - rank(y) || ver(y) - ver(x));
+    const names: string[] = (j.models ?? []).filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m: any) => String(m.name).replace(/^models\//, "")).filter((n: string) => /^gemini-[\d.]+-flash(-lite)?$/.test(n));
+    names.sort((x, y) => parseFloat(y.split("-")[1]) - parseFloat(x.split("-")[1]) || Number(x.endsWith("-lite")) - Number(y.endsWith("-lite")));
     return (modelList = names);
   } catch { return []; }
 }
@@ -53,7 +49,7 @@ export async function readLabelWithGemini(base64Jpeg: string, key: string, model
   if (/ (401|403)\b/.test(String((lastErr as Error)?.message))) throw lastErr;     // a bad key: other models will not help
   await sleep(700); out = await tryModel(first);                                      // "high demand" often clears within a second
   if (out) return out;
-  for (const m of [...(await otherModels(key)), "gemini-flash-latest"]) { if (m === first) continue; out = await tryModel(m); if (out) { console.warn(`[scan-ai] using "${m}" instead of "${first}"`); return out; } }
+  for (const m of await otherModels(key)) { if (m === first) continue; out = await tryModel(m); if (out) { console.warn(`[scan-ai] using "${m}" instead of "${first}"`); return out; } }
   throw lastErr ?? new Error("gemini unavailable");
 }
 
@@ -86,7 +82,7 @@ export function sanitize(o: any): LabelFields {
 /** Plain-language rewriting with Gemini (used for the education summaries when there is no Anthropic key). Returns the JSON text. */
 export async function geminiJson(key: string, model: string, system: string, user: string): Promise<string> {
   const deadline = Date.now() + 40000; let lastErr: unknown = new Error("gemini unavailable");
-  const first = pickedModel ?? model; const chain = [first, first, ...[...(await otherModels(key)), "gemini-flash-latest"].filter((m) => m !== first)];
+  const first = pickedModel ?? model; const chain = [first, first, ...(await otherModels(key)).filter((m) => m !== first)];
   for (let i = 0; i < chain.length; i++) {
     const left = deadline - Date.now(); if (left < 4000) break; const m = chain[i];
     try {

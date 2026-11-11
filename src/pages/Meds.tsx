@@ -17,7 +17,7 @@ export function MedList() {
   const list = meds.filter((m) => (showArchived ? true : !m.archived) && m.name.toLowerCase().includes(q.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <>
-      <div className="row between"><h1>Medications</h1><div className="row"><Link to="/ask" className="btn ghost small">Ask</Link><Link to="/meds/scan" className="btn ghost small">Scan</Link><Link to="/meds/new" className="btn small">Add</Link></div></div>
+      <div className="row between"><h1>Medications</h1><div className="row"><Link to="/meds/scan" className="btn ghost small">Scan</Link><Link to="/meds/new" className="btn small">Add</Link></div></div>
       <p className="sub">Prescriptions, over-the-counter medicines, vitamins and supplements, all in one list.</p>
       {meds.length > 3 && <input aria-label="Search medications" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 14 }} />}
       {list.length === 0 && <div className="empty">{meds.length ? "No matches." : <>Nothing here yet.<br /><br /><div className="row" style={{ justifyContent: "center" }}><Link className="btn" to="/meds/scan">Scan a bottle</Link><Link className="btn ghost" to="/meds/new">Type it in</Link></div></>}</div>}

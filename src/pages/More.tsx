@@ -23,7 +23,6 @@ const download = (name: string, data: unknown, type = "application/json") => {
 
 export function More() {
   const items: [string, string, string][] = [
-    ["/ask", "Ask SyncraMed", "Ask any medicine or health question, answered from trusted sources"],
     ["/pharmacies", "Pharmacies & refills", "Supply, refill alerts, call your pharmacy"],
     ["/summary", "Summary for my doctor", "Printable medication list and history"],
     ["/sources", "Where information comes from", "The only sources SyncraMed uses"],
