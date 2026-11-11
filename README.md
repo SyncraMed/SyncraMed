@@ -55,3 +55,9 @@ After the text is read, `src/scan/fields.ts` keeps only what belongs in each fie
 labels (QTY, Quantity, Disp, Refills, RF, "No refills", headings over numbers), directions keep only dosing words and numbers,
 the prescriber keeps only name words, and the medicine name is repaired against `shared/drugnames.ts` (offline list; RxNorm still
 confirms it online). Junk, dates, phone numbers and other parts of the label are dropped.
+
+### Optional AI label reading (Gemini)
+Set `GEMINI_API_KEY` on the server (see `.env.example`) and the scanner sends the flattened label picture to `POST /api/scan-ai`,
+which asks Google Gemini for the printed fields (medicine, strength, directions, quantity, refills, prescriber). The reply goes through
+the same parser and review screen. Without a key, or if the request fails, the on-device reader is used. Photos are passed through,
+never stored or logged. For real patient data, use a Google Cloud (Vertex AI) account with a signed HIPAA agreement, not a free AI Studio key.

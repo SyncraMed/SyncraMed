@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiUrl } from "../core/api";
+import { aiEnabled } from "../scan/ai";
 import { parseDirections, type ScanResult } from "../scan/parse";
 import { grabSharpest, shotFromFile, readLabelImage, stitchSweep, SweepRecorder, type Shot } from "../scan/capture";
 import { mergeReads } from "../scan/merge";
@@ -31,6 +32,8 @@ export default function Scan() {
   const [sweepN, setSweepN] = useState<number | null>(null); // null = not recording; a number = pictures recorded so far
   const rec = useRef<SweepRecorder | null>(null);
   const stopCamera = () => { rec.current?.stop(); rec.current = null; setSweepN(null); stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCam(false); setCamReady(false); };
+  const [aiOn, setAiOn] = useState(false);
+  useEffect(() => { void aiEnabled().then(setAiOn); }, []);
   useEffect(() => () => { stream.current?.getTracks().forEach((t) => t.stop()); }, []);
 
   const finish = async (r: ScanResult, text: string, flatUrl: string, extra?: string) => {
@@ -129,6 +132,7 @@ export default function Scan() {
               <input type="file" accept="image/*" capture="environment" hidden onChange={(e) => onPhoto(e.target.files?.[0])} /></label>
             <label className="btn ghost block" style={{ cursor: "pointer", marginTop: 10 }}>Choose a photo
               <input type="file" accept="image/*" hidden onChange={(e) => onPhoto(e.target.files?.[0])} /></label>
+            {aiOn && <p className="small muted" style={{ margin: "12px 0 0" }}>To read the label accurately, the label picture is sent to Google's Gemini AI. It is not stored by SyncraMed, and the patient name is never read or kept.</p>}
           </div>
           <p className="muted small">We straighten the label, even out shadows and glare, and read it. You check and fix every field before anything is saved.</p>
         </>

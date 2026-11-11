@@ -2,6 +2,7 @@
 // too slow on phones.) Nothing here is uploaded: the picture is processed on the device.
 import { flatten, pad, resize, sharpness, toGray, type Flat, type Gray } from "./flatten";
 import { createReader, type Progress } from "./ocr";
+import { aiReadText } from "./ai";
 import { alignFrames, composeFrames, type Rgba } from "./stitch";
 
 /** The part of the picture that is read, as fractions. The box drawn on screen is only an aiming guide (6% / 12% in);
@@ -114,14 +115,18 @@ export async function stitchSweep(frames: SweepFrame[], onProgress?: Progress): 
   return { shot: { gray: toGray(image.data, image.w, image.h), color: c }, used: placed.length };
 }
 
-export interface LabelRead { texts: string[]; flatUrl: string; skew: number }
+export interface LabelRead { texts: string[]; flatUrl: string; skew: number; ai?: boolean }
 
 /** Flatten, then read it two ways (soft grey and hard black-and-white). The caller combines the readings. */
 export async function readLabelImage(shot: Shot, onProgress?: Progress, wide = false): Promise<LabelRead> {
   onProgress?.(5, "Flattening the label");
   await new Promise((r) => setTimeout(r, 20)); // let the screen update before the heavy work
   const f = flatten(shot.gray, wide ? Math.min(4200, Math.max(shot.gray.w, shot.gray.h)) : 1800); // a joined picture is kept at full size so the small print stays readable
-  const flatUrl = colourPage(shot.color, f).toDataURL("image/jpeg", 0.8);
+  const colour = colourPage(shot.color, f);
+  const flatUrl = colour.toDataURL("image/jpeg", 0.8);
+  onProgress?.(10, "Reading the label");
+  const ai = await aiReadText(colour);                 // only when the server has an AI key; otherwise null
+  if (ai) { onProgress?.(100, "Done"); return { texts: [ai], flatUrl, skew: f.skew, ai: true }; }
   onProgress?.(15, "Loading the reader (first time only)");
   const reader = await createReader(undefined, { minConf: 45 });
   try {

@@ -4,6 +4,7 @@ import { buildEducation } from "./education.js";
 import { TRUSTED_SOURCES } from "./trusted.js";
 import { anthropicSummarizer } from "./summarize.js";
 import { resolveCandidates, lookupCode } from "./scan.js";
+import { readLabelWithGemini } from "./labelai.js";
 import type { EducationBundle } from "../shared/education.js";
 
 const app = express();
@@ -12,7 +13,7 @@ const NATIVE_ORIGINS = new Set(["capacitor://localhost", "ionic://localhost", "h
 app.use("/api", (req, res, next) => {
   const o = req.headers.origin;
   if (o && NATIVE_ORIGINS.has(o)) { res.setHeader("Access-Control-Allow-Origin", o); res.setHeader("Vary", "Origin"); }
-  if (req.method === "OPTIONS") { res.setHeader("Access-Control-Allow-Methods", "GET"); res.setHeader("Access-Control-Allow-Headers", "Content-Type"); return res.sendStatus(204); }
+  if (req.method === "OPTIONS") { res.setHeader("Access-Control-Allow-Methods", "GET, POST"); res.setHeader("Access-Control-Allow-Headers", "Content-Type"); return res.sendStatus(204); }
   next();
 });
 const TTL = 12 * 3600 * 1000; // NLM asks implementers to cache 12-24h
@@ -22,7 +23,8 @@ const summarizer = process.env.ANTHROPIC_API_KEY
   : null;
 
 // Privacy: the server only ever receives a medication or supplement NAME. No accounts, no health logs, no logging of queries.
-app.get("/api/health", (_q, r) => r.json({ ok: true, summarizing: !!summarizer }));
+const geminiKey = process.env.GEMINI_API_KEY;
+app.get("/api/health", (_q, r) => r.json({ ok: true, summarizing: !!summarizer, aiScan: !!geminiKey }));
 app.get("/api/sources", (_q, r) => r.json(TRUSTED_SOURCES));
 
 let inflight = 0;
@@ -54,6 +56,20 @@ app.get("/api/ndc", async (req, res) => {
   const code = String(req.query.code ?? "").replace(/\D/g, "");
   if (code.length < 8 || code.length > 14) return res.status(400).json({ error: "Not a medicine barcode." });
   try { res.json({ match: await lookupCode(code, process.env.OPENFDA_API_KEY) }); } catch { res.status(502).json({ error: "Could not reach openFDA right now." }); }
+});
+
+// Optional AI label reading (Gemini). The picture is passed straight through, never stored or logged.
+const hits = new Map<string, number[]>();
+app.post("/api/scan-ai", express.json({ limit: "6mb" }), async (req, res) => {
+  if (!geminiKey) return res.status(404).json({ error: "AI reading is not turned on." });
+  const ip = String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "").split(",")[0].trim();
+  const now = Date.now(); const recent = (hits.get(ip) ?? []).filter((t) => now - t < 60000);
+  if (recent.length >= 12) return res.status(429).json({ error: "Too many scans, wait a minute." });
+  hits.set(ip, [...recent, now]); if (hits.size > 5000) hits.clear();
+  const img = String(req.body?.image ?? "").replace(/^data:image\/jpeg;base64,/, "");
+  if (img.length < 1000 || !/^[A-Za-z0-9+/=]+$/.test(img)) return res.status(400).json({ error: "No picture." });
+  try { res.json({ fields: await readLabelWithGemini(img, geminiKey, process.env.GEMINI_MODEL ?? "gemini-2.5-flash") }); }
+  catch { res.status(502).json({ error: "The AI reader could not be reached." }); }
 });
 
 export default app;
