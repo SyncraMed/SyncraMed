@@ -172,14 +172,14 @@ export function AskBox({ bundle, bundleKey }: { bundle: EducationBundle; bundleK
   return (
     <div className="card" style={{ marginTop: 18 }}>
       <h3>Ask about this medicine</h3>
-      <p className="muted small" style={{ marginTop: 0 }}>Answers are pulled word-for-word from the sources above. Questions about what <em>you</em> should do go to your doctor or pharmacist.</p>
+      <p className="muted small" style={{ marginTop: 0 }}>Answers are pulled word-for-word from the sources above. Questions about what <em>you</em> should do go to your doctor or pharmacist. For anything else, <Link to="/ask"><strong>Ask SyncraMed</strong></Link>.</p>
       <form onSubmit={ask} className="row"><input aria-label="Your question" placeholder="e.g. What are common side effects?" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginTop: 0 }} /><button className="btn" disabled={q.trim().length < 3}>Ask</button></form>
       {res && (
         <div style={{ marginTop: 14 }} role="status">
           {res.cat === "emergency" && <div className="banner"><strong>{EMERGENCY_MESSAGE}</strong></div>}
           {res.cat === "actionable" && <div className="banner">{ACTIONABLE_MESSAGE}</div>}
           {res.blocks.length > 0 && <Blocks blocks={res.blocks} bundleKey={bundleKey} />}
-          {res.none && res.cat !== "emergency" && <p className="muted">The trusted sources we retrieved don't address that. Ask your pharmacist or doctor.</p>}
+          {res.none && res.cat !== "emergency" && <p className="muted">The sources shown here don't address that. <Link to={`/ask?q=${encodeURIComponent(q.trim())}`}><strong>Ask SyncraMed</strong></Link> to search the trusted sources for it, or ask your pharmacist or doctor.</p>}
         </div>
       )}
     </div>

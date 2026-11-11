@@ -49,3 +49,14 @@ export function geminiSummarizer(apiKey: string, model: string): Summarizer {
     return JSON.parse(m[0]).sections ?? [];
   };
 }
+
+/** One JSON-answering request to Claude (used by the chat when an Anthropic key is set). */
+export async function anthropicJson(apiKey: string, model: string, system: string, user: string): Promise<string> {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model, max_tokens: 1800, system, messages: [{ role: "user", content: user }] }), signal: AbortSignal.timeout(40000),
+  });
+  if (!r.ok) throw new Error(`model request failed: ${r.status}`);
+  const j: any = await r.json();
+  return j?.content?.find((c: any) => c.type === "text")?.text ?? "";
+}

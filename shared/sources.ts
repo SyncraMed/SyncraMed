@@ -6,6 +6,7 @@ export const TRUSTED_SOURCES = [
   { host: "rxnav.nlm.nih.gov", name: "RxNorm (NLM), name matching only", use: "fetch" },
   { host: "connect.medlineplus.gov", name: "MedlinePlus Connect (NLM)", use: "fetch" },
   { host: "medlineplus.gov", name: "MedlinePlus (NLM)", use: "link" },
+  { host: "wsearch.nlm.nih.gov", name: "MedlinePlus health topics search (NLM)", use: "fetch" },
   // Supplements
   { host: "ods.od.nih.gov", name: "NIH Office of Dietary Supplements", use: "fetch" },
   { host: "dsldapi.od.nih.gov", name: "NIH Dietary Supplement Label Database", use: "fetch" },

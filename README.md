@@ -61,3 +61,11 @@ Set `GEMINI_API_KEY` on the server (see `.env.example`) and the scanner sends th
 which asks Google Gemini for the printed fields (medicine, strength, directions, quantity, refills, prescriber). The reply goes through
 the same parser and review screen. Without a key, or if the request fails, the on-device reader is used. Photos are passed through,
 never stored or logged. For real patient data, use a Google Cloud (Vertex AI) account with a signed HIPAA agreement, not a free AI Studio key.
+
+### Ask SyncraMed (chat)
+`/ask` is a chat for any medicine or health-education question. `POST /api/ask` (server/ask.ts) finds the medicine names in the question,
+retrieves passages from the trusted list only (FDA label, MedlinePlus drug and health-topic pages, NIH supplement sheets, PubMed), picks the
+passages that match the question, and asks the AI (Claude if `ANTHROPIC_API_KEY` is set, else Gemini) to answer using only those passages.
+Each sentence must cite a passage and is checked against it (numbers and wording); failed sentences are dropped and replaced by
+word-for-word source sentences. If no verified source covers the question, the chat says so instead of answering. Emergencies get 911 / Poison
+Control / 988 and no retrieval. Every answer and the page itself carry the educational-use disclaimer. The conversation is not saved.
