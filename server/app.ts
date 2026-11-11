@@ -22,7 +22,7 @@ const memo = new Map<string, { at: number; v: EducationBundle }>();
 // Plain-language rewriting of the trusted-source passages: Anthropic if that key is set, otherwise Gemini if that key is set, otherwise none (cited excerpts only).
 const summarizer = process.env.ANTHROPIC_API_KEY
   ? anthropicSummarizer(process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5")
-  : process.env.GEMINI_API_KEY ? geminiSummarizer(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL ?? "gemini-2.5-flash") : null;
+  : process.env.GEMINI_API_KEY ? geminiSummarizer(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL ?? "gemini-3.8-flash") : null;
 
 // Privacy: the server only ever receives a medication or supplement NAME. No accounts, no health logs, no logging of queries.
 const geminiKey = process.env.GEMINI_API_KEY;
@@ -70,14 +70,14 @@ app.post("/api/scan-ai", express.json({ limit: "6mb" }), async (req, res) => {
   hits.set(ip, [...recent, now]); if (hits.size > 5000) hits.clear();
   const img = String(req.body?.image ?? "").replace(/^data:image\/jpeg;base64,/, "");
   if (img.length < 1000 || !/^[A-Za-z0-9+/=]+$/.test(img)) return res.status(400).json({ error: "No picture." });
-  try { res.json({ fields: await readLabelWithGemini(img, geminiKey, process.env.GEMINI_MODEL ?? "gemini-2.5-flash") }); }
+  try { res.json({ fields: await readLabelWithGemini(img, geminiKey, process.env.GEMINI_MODEL ?? "gemini-3.8-flash") }); }
   catch (e: any) { res.status(502).json({ error: "The AI reader could not be reached.", detail: String(e?.message ?? "").slice(0, 200) }); }
 });
 
 // Ask SyncraMed: answers any question, but only from sources retrieved just now from the trusted list (see server/ask.ts).
 const askLlm = process.env.ANTHROPIC_API_KEY
   ? (sys: string, user: string) => anthropicJson(process.env.ANTHROPIC_API_KEY!, process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5", sys, user)
-  : geminiKey ? (sys: string, user: string) => geminiJson(geminiKey, process.env.GEMINI_MODEL ?? "gemini-2.5-flash", sys, user) : null;
+  : geminiKey ? (sys: string, user: string) => geminiJson(geminiKey, process.env.GEMINI_MODEL ?? "gemini-3.8-flash", sys, user) : null;
 const askHits = new Map<string, number[]>();
 app.post("/api/ask", express.json({ limit: "20kb" }), async (req, res) => {
   const q = String(req.body?.question ?? "").trim();
