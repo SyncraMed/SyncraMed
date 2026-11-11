@@ -48,3 +48,10 @@ What the phone app adds: dose reminders scheduled with the phone (they fire when
 - MedlinePlus Connect's JSON shape and NIH ODS page layout are parsed defensively but unverified against live responses.
 - On the web, reminders fire only while the app is open/running. In the phone app they are scheduled with the phone (next 7 days, rescheduled whenever the app opens or a medication changes), so open the app at least weekly.
 - Not HIPAA-compliant. The passcode is a screen lock, not encryption.
+
+
+### Filtering what the scanner reads
+After the text is read, `src/scan/fields.ts` keeps only what belongs in each field: quantity and refills are found next to their
+labels (QTY, Quantity, Disp, Refills, RF, "No refills", headings over numbers), directions keep only dosing words and numbers,
+the prescriber keeps only name words, and the medicine name is repaired against `shared/drugnames.ts` (offline list; RxNorm still
+confirms it online). Junk, dates, phone numbers and other parts of the label are dropped.

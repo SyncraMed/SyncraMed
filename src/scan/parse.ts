@@ -1,4 +1,5 @@
 import type { MedKind, Schedule } from "../core/types";
+import { cleanDirections, cleanPrescriber, findQuantity, findRefills, fixName } from "./fields";
 
 // Turns OCR text from a medicine bottle into suggested fields. Everything here is a SUGGESTION:
 // the user always reviews and confirms before anything is saved. The patient's own name and address are never extracted.
@@ -117,7 +118,7 @@ export function essentials(r: ScanResult): ScanResult {
 
 export function parseLabel(raw0: string): ScanResult {
   const raw = fixDigits(raw0);
-  const allLines = raw.split(/\r?\n/).map(clean).filter((l) => l.length > 1);
+  const allLines = raw.split(/\r?\n/).map(clean).filter((l) => l.length > 1 || /\d/.test(l));
   const lines = focusLines(allLines);
   const text = lines.join("\n");
   const flat = allLines.join(" ");
@@ -157,7 +158,13 @@ export function parseLabel(raw0: string): ScanResult {
     if (NOISE.test(l) || PHARMACY_WORDS.test(l) || /\d{3}/.test(l) || l.length < 3 || l.length > 40) continue;
     if (/^[A-Za-z][A-Za-z\s'\-]+$/.test(l)) r.nameCandidates.push(l);
   }
-  r.nameCandidates = [...new Set(r.nameCandidates.map((n) => n.replace(/\s+(tablet|capsule|tab|cap)s?$/i, "").trim()).filter((n) => n.length > 2))].slice(0, 4).map((n) => (n === n.toUpperCase() ? title(n) : n));
+  // Only real-looking medicine names survive: misspellings are repaired from the common-medicine list, filler words are dropped,
+  // and names found on the list come first.
+  const fixed = r.kind === "rx"
+    ? r.nameCandidates.map((n) => fixName(n)).filter((x): x is NonNullable<typeof x> => !!x)
+    : r.nameCandidates.map((n) => n.replace(/\s+(tablet|capsule|tab|cap)s?$/i, "").trim()).filter((n) => n.length > 2).map((n) => ({ name: n === n.toUpperCase() ? title(n) : n, known: false }));
+  const seen = new Set<string>(); const uniqueFixed = fixed.filter((x) => (seen.has(x.name.toLowerCase()) ? false : (seen.add(x.name.toLowerCase()), true)));
+  r.nameCandidates = [...uniqueFixed.filter((x) => x.known), ...uniqueFixed.filter((x) => !x.known)].slice(0, 4).map((x) => x.name);
 
   // directions
   const dirIdx = lines.findIndex((l) => /^(take|use|apply|inject|inhale|insert|chew|dissolve|place|instill|spray)\b/i.test(l)) >= 0
@@ -168,30 +175,28 @@ export function parseLabel(raw0: string): ScanResult {
     let end = dirIdx;
     const STOP = /^(qty|quantity|refill|discard|exp|filled|date|rx\b|dr\b|ndc|warning|caution|pharmacy|phone|for:)/i;
     while (end + 1 < lines.length && d.length < 220 && !/[.]$/.test(d) && !STOP.test(lines[end + 1])) d += " " + lines[++end];
-    const shown = d === d.toUpperCase() ? d.toLowerCase() : d;
-    r.directions = shown.charAt(0).toUpperCase() + shown.slice(1);
-    const p = parseDirections(d);
-    r.schedule = p.schedule; r.perDose = p.perDose;
+    const cleaned = cleanDirections(d);           // only words that belong in directions; filler and stray letters are dropped
+    if (cleaned) {
+      const shown = cleaned === cleaned.toUpperCase() ? cleaned.toLowerCase() : cleaned;
+      r.directions = shown.charAt(0).toUpperCase() + shown.slice(1);
+      const p = parseDirections(cleaned);
+      r.schedule = p.schedule; r.perDose = p.perDose;
+    }
   }
 
   // quantity / refills / dates
-  const q = flat.match(/\b(?:qty|q[tyr][yvt]|oty|aty|quantity|dispensed|disp)\s*[:#.;]?\s*(\d{1,4})\b/i) ?? flat.match(/\b(\d{1,4})\s+(?:tablets?|capsules?|caps|tabs)\s+(?:dispensed|total)\b/i) ?? flat.match(/\b(\d{2,4})\s+refills?\b/i);
-  if (q && !(/refill/i.test(q[0]) && Number(q[1]) < 12)) r.quantity = Number(q[1]); // "30 REFILLS:" is the quantity whose "QTY" label was missed; "3 refills" is not
-  const rf = flat.match(/\brefills?(?:\s*(?:remaining|left))?\s*[:#.]?\s*(\d{1,2})\b/i) ?? flat.match(/\b(?:remaining|left)\s*[:#.]\s*(\d{1,2})\b/i); if (rf) r.refills = Number(rf[1]);
-  else if (/\bno refills\b|\brefills?\s*[:]?\s*none\b/i.test(flat)) r.refills = 0;
+  r.quantity = findQuantity(allLines);
+  r.refills = findRefills(allLines);
   const ex = flat.match(/\b(?:discard after|discard by|use by|exp(?:ires?|iration)?(?: date)?|expiry)\s*[:.]?\s*([A-Za-z0-9\/\-., ]{4,20})/i);
   if (ex) r.expires = parseDate(ex[1]);
   const fl = flat.match(/\b(?:date filled|filled|fill date|dispensed)\s*[:.]?\s*([0-9\/\-.]{6,10})/i); if (fl) r.filled = parseDate(fl[1]);
 
   // prescriber (Dr. Maria Lopez). The patient name is deliberately not read.
-  const NOT_A_NAME = /^(license|licence|lic|dea|npi|number|no|phone|ph|rx|qty|refills?|filled|date|discard|take|use|pharmacy|store|office|address|name|id)$/i;
   prescriber: for (const l of allLines) {
-    const re = /\b(?:dr\.?|doctor|prescriber|prescribed\s+by|physician|md|provider)\s*[:.,]?\s*([A-Za-z][A-Za-z'.\-]+(?:,?\s+[A-Za-z][A-Za-z'.\-]+){0,2})/gi;
+    const re = /\b(dr\.?|doctor|prescriber|prescribed\s+by|physician|provider|md)\s*[:.,]?\s*([A-Za-z][A-Za-z'.\-]+(?:,?\s+[A-Za-z][A-Za-z'.\-]+){0,3})/gi;
     for (const m of l.matchAll(re)) {
-      const words = m[1].split(/[\s,]+/).filter(Boolean); const keep: string[] = [];
-      for (const w of words) { if (NOT_A_NAME.test(w.replace(/[.:]/g, ""))) break; keep.push(w); }
-      const name = keep.join(" ").replace(/[,.]$/, "").trim();
-      if (name.length > 2) { r.prescriber = /^(dr|doctor)/i.test(m[0]) ? `Dr. ${title(name)}` : title(name); break prescriber; }
+      const name = cleanPrescriber(m[2]); if (!name) continue;
+      r.prescriber = /^(dr|doctor)/i.test(m[1]) || /^(dr|doctor)\b/i.test(m[2]) ? `Dr. ${title(name)}` : title(name); break prescriber;
     }
   }
 
