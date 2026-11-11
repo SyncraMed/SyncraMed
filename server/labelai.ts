@@ -22,7 +22,7 @@ const SCHEMA = {
 let pickedModel: string | null = null;
 let modelList: string[] | null = null;
 /** Every Flash model this key can use, newest first (plain "flash" before "flash-lite"). Used when the first choice is busy or unknown. */
-async function otherModels(key: string): Promise<string[]> {
+export async function otherModels(key: string): Promise<string[]> {
   if (modelList) return modelList;
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key }, signal: AbortSignal.timeout(8000) });
@@ -77,4 +77,26 @@ const s = (v: unknown, max = 160) => (typeof v === "string" && v.trim() ? v.trim
 const n = (v: unknown, max: number) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null);
 export function sanitize(o: any): LabelFields {
   return { medicine: s(o?.medicine, 80), strength: s(o?.strength, 40), form: s(o?.form, 40), directions: s(o?.directions), quantity: n(o?.quantity, 9999), refills: n(o?.refills, 24), prescriber: s(o?.prescriber, 80), pharmacy: s(o?.pharmacy, 80), filled: s(o?.filled, 10), expires: s(o?.expires, 10) };
+}
+
+/** Plain-language rewriting with Gemini (used for the education summaries when there is no Anthropic key). Returns the JSON text. */
+export async function geminiJson(key: string, model: string, system: string, user: string): Promise<string> {
+  const deadline = Date.now() + 40000; let lastErr: unknown = new Error("gemini unavailable");
+  const first = pickedModel ?? model; const chain = [first, first, ...(await otherModels(key)).filter((m) => m !== first)];
+  for (let i = 0; i < chain.length; i++) {
+    const left = deadline - Date.now(); if (left < 4000) break; const m = chain[i];
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }],
+          generationConfig: { temperature: 0.1, responseMimeType: "application/json", ...(/gemini-2\.5-flash(?!-lite)/.test(m) ? { thinkingConfig: { thinkingBudget: 0 } } : {}) } }),
+        signal: AbortSignal.timeout(Math.min(25000, left)),
+      });
+      if (!r.ok) { if (r.status === 401 || r.status === 403) throw new Error(`gemini ${r.status}`); lastErr = new Error(`gemini ${r.status}`); if (i === 1) await new Promise((x) => setTimeout(x, 500)); continue; }
+      const j: any = await r.json();
+      const text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+      if (text) return text;
+    } catch (e) { lastErr = e; if (/ (401|403)\b/.test(String((e as Error).message))) throw e; }
+  }
+  throw lastErr;
 }
